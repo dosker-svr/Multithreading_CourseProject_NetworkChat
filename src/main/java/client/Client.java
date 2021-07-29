@@ -10,9 +10,7 @@ import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.Scanner;
-/*
-Клиент должен читать номер порта сервера из файла настроек (settings.txt)
-*/
+
 public class Client {
     public static void main(String[] args) {
         try {
@@ -28,7 +26,7 @@ public class Client {
 
             while(true) {
                 System.out.println("Введите сообщение для всего чата:");
-                String lineToChat = scanner.nextLine(); //wrap - для переноса БайтовогоМассива в Буффер
+                String lineToChat = scanner.nextLine();
                 ByteBuffer bufferToServer = ByteBuffer.wrap(lineToChat.getBytes(StandardCharsets.UTF_8));
                 socketChannel.write(bufferToServer);
                 bufferToServer.flip();

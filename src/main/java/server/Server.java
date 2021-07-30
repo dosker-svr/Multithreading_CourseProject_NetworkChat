@@ -79,15 +79,15 @@ public class Server {
                             System.out.println("Отправляем сообщения всем Юзерам");
                             for (SocketChannel channel : sockets.keySet()) {
                                 ByteBuffer channelBuffer = sockets.get(channel);
-                                //channelBuffer.flip();
-                                channelBuffer.clear();
+                                channelBuffer.flip();
+
                                 String textFromClient = new String (channelBuffer.array(),
                                         channelBuffer.position(),
                                         channelBuffer.remaining(),
                                         StandardCharsets.UTF_8);
                                 String textForAllUsers = key.attachment() + " : " + textFromClient;
                                 System.out.println(textForAllUsers);
-                                channelBuffer.flip();
+                                channelBuffer.clear();
                                 channel.write(ByteBuffer.wrap(textForAllUsers.getBytes(StandardCharsets.UTF_8)));
 
                                 channel.register(selector, SelectionKey.OP_READ, key.attachment());

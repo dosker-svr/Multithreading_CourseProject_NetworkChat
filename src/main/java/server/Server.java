@@ -55,7 +55,7 @@ public class Server {
                 while (keysIterator.hasNext()) {
                     SelectionKey key = keysIterator.next();
                     try {
-                        if (key.channel() == serverSocketChannel) { //key.isAcceptable()
+                        if (key.isAcceptable()) { //key.channel() == serverSocketChannel
 /*В этом if принимаем соединение от клиента  + регистрируем канал на чтение*/
                             acceptConnectAndRegisterChannelToRead(selector, serverSocketChannel);
 

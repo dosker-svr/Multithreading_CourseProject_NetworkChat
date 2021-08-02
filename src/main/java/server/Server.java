@@ -26,6 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;/*
  - Сервер принимает сообщение. Добавляет к нему имя + время. Транслирует всем (или придумать в другое местро)*/
 
 public class Server {
+    private static Map<SocketChannel, String> session = new HashMap<>();
     private static Map<SocketChannel, ByteBuffer> sockets = new ConcurrentHashMap<>(); // мапа всех подключенных каналов
     private static volatile List<String> listUsers = new ArrayList<>();
 
@@ -56,75 +57,75 @@ public class Server {
                     try {
                         if (key.isAcceptable()) { //key.channel() == serverSocketChannel
 /*В этом if принимаем соединение от клиента  + регистрируем канал на чтение*/
-                            System.out.println("Соединены с Клиентом");
-                            SocketChannel clientChannel = serverSocketChannel.accept();
-                            clientChannel.configureBlocking(false);
-                            sockets.put(clientChannel, ByteBuffer.allocate(2 << 10));
-                            clientChannel.register(selector, SelectionKey.OP_READ);
+                            acceptConnectAndRegisterChannelToRead(selector, serverSocketChannel);
 
-                        } else if (key.isReadable() && (key.attachment() == null)) {
-/*в этом if читаем Имя Юзера и добавляем к SelectionKey вложение в виде его Имени. Потом тащим это Имя везде*/
-                            SocketChannel clientChannel = (SocketChannel) key.channel();
-                            ByteBuffer clientBuffer = sockets.get(clientChannel);
-                            clientChannel.read(clientBuffer);
-
-                            String userName = new String(clientBuffer.array(),
-                                    0,
-                                    clientBuffer.remaining(),
-                                    StandardCharsets.UTF_8
-                            );
-
-                            key.attach(userName);
-                            System.out.println("Клиент зарегистрирован: " + key.attachment());
-                            listUsers.add(userName);
-                            clientBuffer.clear();
-                            //clientBuffer.flip();
-
-                        } else if (key.isReadable() && (key.attachment() != null)) {
-/*в этом if принимаем сообщение и регистрируем SelectionKey на запись*/
-                            System.out.println("Прнимаем сообщение от Юзера");
-                            SocketChannel clientChannel = (SocketChannel) key.channel();
-                            ByteBuffer channelBuffer = sockets.get(clientChannel);
-                            int countBytes = clientChannel.read(channelBuffer);
-
-                            clientChannel.register(selector, SelectionKey.OP_WRITE, key.attachment());
-
-                            if (countBytes == -1) {
-                                System.out.println("Юзер вышел из списка");
-                                sockets.remove(clientChannel);
-                                clientChannel.close();
-                            }
-
-
-                        } else if (key.isWritable()) {
-                            System.out.println("Отправляем сообщения всем Юзерам");
-                            SocketChannel messageChannel = (SocketChannel) key.channel();
-                            ByteBuffer messageBuffer = sockets.get(messageChannel);
-                            messageBuffer.flip();
-                            String messFromClient = new String(messageBuffer.array(),
-                                    messageBuffer.position(),
-                                    messageBuffer.remaining(),
-                                    StandardCharsets.UTF_8);
-                            String messForAllUsers = key.attachment() + " : " + messFromClient;
-                            messageBuffer.clear();
-                            messageChannel.register(selector, SelectionKey.OP_READ, key.attachment());
-
-                            for (SocketChannel channel : sockets.keySet()) {
-                                /*ByteBuffer channelBuffer = sockets.get(channel);
-                                channelBuffer.flip();
-
-                                String textFromClient = new String (channelBuffer.array(),
-                                        channelBuffer.position(),
-                                        channelBuffer.remaining(),
-                                        StandardCharsets.UTF_8);
-                                String textForAllUsers = key.attachment() + " : " + textFromClient;
-                                System.out.println(textForAllUsers);
-                                channelBuffer.clear();
-                                channel.write(ByteBuffer.wrap(messForAllUsers.getBytes(StandardCharsets.UTF_8)));
-                                channel.register(selector, SelectionKey.OP_READ, key.attachment());*/
-                                channel.write(ByteBuffer.wrap(messForAllUsers.getBytes(StandardCharsets.UTF_8)));
-                            }
+                        } else if(key.isReadable()) {
+                            /*в этом if принимаем сообщение*/
+                            readMessage(key);
                         }
+//                        else if (key.isReadable() && (key.attachment() == null)) {
+///*в этом if читаем Имя Юзера и добавляем к SelectionKey вложение в виде его Имени. Потом тащим это Имя везде*/
+//                            SocketChannel clientChannel = (SocketChannel) key.channel();
+//                            ByteBuffer clientBuffer = sockets.get(clientChannel);
+//                            clientChannel.read(clientBuffer);
+//
+//                            String userName = new String(clientBuffer.array(),
+//                                    0,
+//                                    clientBuffer.remaining(),
+//                                    StandardCharsets.UTF_8
+//                            );
+//
+//                            key.attach(userName);
+//                            System.out.println("Клиент зарегистрирован: " + key.attachment());
+//                            listUsers.add(userName);
+//                            clientBuffer.clear();
+//                            //clientBuffer.flip();
+//
+//                        } else if (key.isReadable() && (key.attachment() != null)) {
+///*в этом if принимаем сообщение и регистрируем SelectionKey на запись*/
+//                            System.out.println("Прнимаем сообщение от Юзера");
+//                            SocketChannel clientChannel = (SocketChannel) key.channel();
+//                            ByteBuffer channelBuffer = sockets.get(clientChannel);
+//                            int countBytes = clientChannel.read(channelBuffer);
+//
+//                            clientChannel.register(selector, SelectionKey.OP_WRITE, key.attachment());
+//
+//                            if (countBytes == -1) {
+//                                System.out.println("Юзер вышел из списка");
+//                                sockets.remove(clientChannel);
+//                                clientChannel.close();
+//                            }
+//
+//
+//                        } else if (key.isWritable()) {
+//                            System.out.println("Отправляем сообщения всем Юзерам");
+//                            SocketChannel messageChannel = (SocketChannel) key.channel();
+//                            ByteBuffer messageBuffer = sockets.get(messageChannel);
+//                            messageBuffer.flip();
+//                            String messFromClient = new String(messageBuffer.array(),
+//                                    messageBuffer.position(),
+//                                    messageBuffer.remaining(),
+//                                    StandardCharsets.UTF_8);
+//                            String messForAllUsers = key.attachment() + " : " + messFromClient;
+//                            messageBuffer.clear();
+//                            messageChannel.register(selector, SelectionKey.OP_READ, key.attachment());
+//
+//                            for (SocketChannel channel : sockets.keySet()) {
+//                                /*ByteBuffer channelBuffer = sockets.get(channel);
+//                                channelBuffer.flip();
+//
+//                                String textFromClient = new String (channelBuffer.array(),
+//                                        channelBuffer.position(),
+//                                        channelBuffer.remaining(),
+//                                        StandardCharsets.UTF_8);
+//                                String textForAllUsers = key.attachment() + " : " + textFromClient;
+//                                System.out.println(textForAllUsers);
+//                                channelBuffer.clear();
+//                                channel.write(ByteBuffer.wrap(messForAllUsers.getBytes(StandardCharsets.UTF_8)));
+//                                channel.register(selector, SelectionKey.OP_READ, key.attachment());*/
+//                                channel.write(ByteBuffer.wrap(messForAllUsers.getBytes(StandardCharsets.UTF_8)));
+//                            }
+//                        }
                     } finally {
                         keysIterator.remove();
                     }
@@ -137,15 +138,63 @@ public class Server {
 
     }
 
-    /*private static void acceptConnectAndRegisterChannelToRead(Selector selector, ServerSocketChannel serverSocketChannel) throws IOException {
+    private static void acceptConnectAndRegisterChannelToRead(Selector selector, ServerSocketChannel serverSocketChannel) throws IOException {
         System.out.println("Соединены с Клиентом");
         SocketChannel clientChannel = serverSocketChannel.accept();
         clientChannel.configureBlocking(false);
-        sockets.put(clientChannel, ByteBuffer.allocate(2 << 10));
+        sockets.put(clientChannel, ByteBuffer.allocate(2 << 10)); // нужно или нет ???
         clientChannel.register(selector, SelectionKey.OP_READ);
+        // в цикле ждём пока клиент введёт своё имя
+        ByteBuffer bufferForName = ByteBuffer.allocate(2 << 10);
+        int byteFromClient = clientChannel.read(bufferForName);
+/*// ВОТ ОТСЮДА
+        while (byteFromClient <= 0) {
+            clientChannel.read(bufferForName);
+        }
+// ДО СЮДА - может быть неправильно считываю всё имя*/
+        System.out.println("кол-во байт в имени="+byteFromClient);
+        bufferForName.flip();
+        String userName = new String (bufferForName.array(), StandardCharsets.UTF_8);
+        session.put(clientChannel, userName);
+        sendEveryoneMessage("подключился пользователь");
+    }
+
+    private static void readMessage(SelectionKey key) {
+        SocketChannel channel = (SocketChannel) key.channel();
+        ByteBuffer channelBuffer = ByteBuffer.allocate(2 << 10);
+        int numRead = 0;
+        try {
+            int countByte = channel.read(channelBuffer);
+            numRead = countByte;
+            if (countByte == -1) {
+                session.remove(channel);
+                sendEveryoneMessage("вышел из чата");
+                channel.close();
+                key.cancel();
+                return;
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+// понять что происходит дальше:
+        byte[] data = new byte[numRead];
+        System.arraycopy(channelBuffer.array(), 0, data, 0, numRead);
+        String gotData = new String(data);
+        System.out.println("Got: " + gotData);
+        sendEveryoneMessage(gotData);
     }
 
     private static void sendEveryoneMessage(String message) {
-
-    }*/
+        session.forEach((socketChannel, userName) -> {
+            String fullMessage = "'" + userName + "': " + message;
+            ByteBuffer bufferForMessage = ByteBuffer.wrap(fullMessage.getBytes(StandardCharsets.UTF_8));
+            bufferForMessage.flip();
+            try {
+                socketChannel.write(bufferForMessage);
+                bufferForMessage.flip();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        });
+    }
 }

@@ -39,7 +39,7 @@ public class Server {
                             acceptConnection(selector, serverSocketChannel);
 
                         } else if (key.isReadable() && !session.containsKey((SocketChannel) key.channel())) {
-/*в этом if читаем Имя Юзера и добавляем к SelectionKey вложение в виде его Имени. Потом тащим это Имя везде*/
+/*в этом if читаем Имя Юзера и добавляем в мапу session имя*/
                             logIn(key, selector);
 
                         } else if (key.isReadable() && session.containsKey((SocketChannel) key.channel())) {

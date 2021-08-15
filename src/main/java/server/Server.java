@@ -8,11 +8,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-
 public class Server {
-    private static Map<SocketChannel, String> session = new HashMap<>(); // мапа для всех сессий. значение - имя Юзера
     private static Map<SocketChannel, ByteBuffer> sockets = new ConcurrentHashMap<>(); // мапа всех подключенных каналов
-    private static volatile List<String> listUsers = new ArrayList<>();
 
     public static void main(String[] args) {
         try {
@@ -30,24 +27,27 @@ public class Server {
                     continue;
                 }
                 Set<SelectionKey> setKeys = selector.selectedKeys();
-                Iterator<SelectionKey> keysIterator = setKeys.iterator();//размер iteartor всегда = 1
+                Iterator<SelectionKey> keysIterator = setKeys.iterator();
                 while (keysIterator.hasNext()) {
                     SelectionKey key = keysIterator.next();
-                    keysIterator.remove();
-                    if (key.isAcceptable()) {
+                    try {
+                        if (key.isAcceptable()) {// key.channel() == serverSocketChannel
 /*В этом if принимаем соединение от клиента  + регистрируем канал на чтение*/
-                        acceptConnection(selector, serverSocketChannel);
+                            acceptConnection(selector, serverSocketChannel);
 
-                    } else if (key.isReadable() && !session.containsKey((SocketChannel) key.channel())) {
-/*в этом if читаем Имя Юзера и добавляем в мапу session имя*/
-                        logIn(key, selector);
+                        } else if (key.isReadable() && (key.attachment() == null)) {
+/*в этом if читаем Имя Юзера и добавляем к SelectionKey вложение в виде его Имени. Потом тащим это Имя везде*/
+                            logIn(key);
 
-                    } else if (key.isReadable() && session.containsKey((SocketChannel) key.channel())) {
+                        } else if (key.isReadable() && (key.attachment() != null)) {
 /*в этом if принимаем сообщение и регистрируем SelectionKey на запись*/
-                        readMessage(key, selector);
-                    } else if (key.isWritable()) {
-/*в этом if отправляем сообщения всем Клиентам*/
-                        sendEveryoneMessage(selector, key);
+                            readMessage(selector, key);
+                        } else if (key.isWritable()) {
+/*в этом if отправляем сообщение всем Юзерам*/
+                            sendMessageEveryone(selector, key);
+                        }
+                    } finally {
+                        keysIterator.remove();
                     }
                 }
             }
@@ -64,7 +64,7 @@ public class Server {
         clientChannel.register(selector, SelectionKey.OP_READ);
     }
 
-    private static void logIn(SelectionKey key, Selector selector) throws IOException {
+    private static void logIn(SelectionKey key) throws IOException {
         SocketChannel clientChannel = (SocketChannel) key.channel();
         ByteBuffer clientBuffer = sockets.get(clientChannel);
         clientChannel.read(clientBuffer);
@@ -75,22 +75,18 @@ public class Server {
                 StandardCharsets.UTF_8
         );
 
-        session.put(clientChannel, userName);
-        System.out.println("Клиент зарегистрирован: " + userName);
+        key.attach(userName);
+        System.out.println("Клиент зарегистрирован: " + key.attachment());
         clientBuffer.clear();
-        clientChannel.register(selector, SelectionKey.OP_WRITE);
-
-        messageForEveryone("подключился пользователь " + userName, selector);
     }
 
-    private static void readMessage(SelectionKey key, Selector selector) throws IOException {
+    private static void readMessage(Selector selector, SelectionKey key) throws IOException {
         System.out.println("Прнимаем сообщение от Юзера");
         SocketChannel clientChannel = (SocketChannel) key.channel();
         ByteBuffer channelBuffer = sockets.get(clientChannel);
-        channelBuffer.clear();
         int countBytes = clientChannel.read(channelBuffer);
 
-        clientChannel.register(selector, SelectionKey.OP_WRITE);
+        clientChannel.register(selector, SelectionKey.OP_WRITE, key.attachment());
 
         if (countBytes == -1) {
             System.out.println("Юзер вышел из списка");
@@ -99,35 +95,22 @@ public class Server {
         }
     }
 
-    private static void sendEveryoneMessage(Selector selector, SelectionKey key) throws ClosedChannelException {
+    private static void sendMessageEveryone(Selector selector, SelectionKey key) throws IOException {
         System.out.println("Отправляем сообщения всем Юзерам");
-        SocketChannel clientChannel = (SocketChannel) key.channel();
-        ByteBuffer clientBuffer = sockets.get(clientChannel);
-        clientBuffer.flip();
-        String userName = session.get(clientChannel);
-        String message = userName + ": " + new String(clientBuffer.array(),
-                0,
-                clientBuffer.remaining(),
-                StandardCharsets.UTF_8
-        );
-        messageForEveryone(message, selector);
-    }
+        for (SocketChannel channel : sockets.keySet()) {
+            ByteBuffer channelBuffer = sockets.get(channel);
+            channelBuffer.flip();
 
-    private static void messageForEveryone(String message, Selector selector) {
-        session.forEach((socketChannel, userName) -> {
-            String fullMessage = message; //String fullMessage = "'" + userName + "': " + message;
-            ByteBuffer bufferForMessage = ByteBuffer.wrap(fullMessage.getBytes(StandardCharsets.UTF_8));
-            bufferForMessage.flip();
+            String textFromClient = new String (channelBuffer.array(),
+                    channelBuffer.position(),
+                    channelBuffer.remaining(),
+                    StandardCharsets.UTF_8);
+            String textForAllUsers = key.attachment() + " : " + textFromClient;
+            System.out.println(textForAllUsers);
+            channelBuffer.clear();
+            channel.write(ByteBuffer.wrap(textForAllUsers.getBytes(StandardCharsets.UTF_8)));
 
-            try {
-                socketChannel.register(selector, SelectionKey.OP_WRITE);
-                System.out.println("для клиента=" + userName + " - " + fullMessage);
-                sockets.get(socketChannel).clear();//NEW
-                socketChannel.write(bufferForMessage);
-                socketChannel.register(selector, SelectionKey.OP_READ);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        });
+            channel.register(selector, SelectionKey.OP_READ, key.attachment());
+        }
     }
 }

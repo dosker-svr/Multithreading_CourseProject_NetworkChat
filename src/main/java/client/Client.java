@@ -16,7 +16,6 @@ public class Client {
         try {
             SocketChannel socketChannel = SocketChannel.open();
             socketChannel.connect(new InetSocketAddress("localhost", 8000));
-            Selector selector = Selector.open();
 
             Scanner scanner = new Scanner(System.in);
             System.out.println("Введите свой Логин:");
